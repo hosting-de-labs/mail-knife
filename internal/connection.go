@@ -48,7 +48,7 @@ func (conn *Connection) Close() error {
 	//TODO: timeout
 	conn.readerWg.Wait()
 
-	return nil
+	return io.EOF
 }
 
 func (conn *Connection) Send(msg string) error {
@@ -60,12 +60,13 @@ func (conn *Connection) Send(msg string) error {
 	return nil
 }
 
-func (conn *Connection) reader(wg *sync.WaitGroup) error {
+func (conn *Connection) reader(wg *sync.WaitGroup) {
 	defer wg.Done()
-	wg.Add(1)
 
 	buf := bufio.NewReader(*conn.Conn)
 	tr := textproto.NewReader(buf)
+
+	defer conn.Close()
 
 	for {
 		select {
@@ -80,11 +81,11 @@ func (conn *Connection) reader(wg *sync.WaitGroup) error {
 			if err != io.EOF {
 				fmt.Println("read error:", err)
 			}
+
+			fmt.Println("reader closed")
 			break
 		}
 
 		fmt.Println(line)
 	}
-
-	return nil
 }

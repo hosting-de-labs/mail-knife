@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/hosting-de-labs/mail-knife/internal"
 )
@@ -40,6 +41,18 @@ func main() {
 	}
 	sess = tmpSess
 
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go stdInReader(wg)
+
+	// waiting for exit
+	wg.Wait()
+	os.Exit(0)
+}
+
+func stdInReader(wg *sync.WaitGroup) {
+	defer wg.Done()
+
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		line, err := reader.ReadString('\n')
@@ -51,13 +64,10 @@ func main() {
 			fmt.Printf("shell: %s\n", err)
 		}
 
-		send(strings.TrimSpace(line))
-	}
-}
-
-func send(msg string) {
-	err := sess.Send(msg)
-	if err != nil {
-		panic(err)
+		msg := strings.TrimSpace(line)
+		err = sess.Send(msg)
+		if err != nil {
+			panic(err)
+		}
 	}
 }

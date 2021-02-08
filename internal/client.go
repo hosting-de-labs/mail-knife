@@ -47,6 +47,7 @@ func (c *Client) Connect(addr string) (Session, error) {
 	c.conns = append(c.conns, conn)
 	c.connsMux.Unlock()
 
+	c.connsWg.Add(1)
 	go conn.reader(c.connsWg)
 
 	return &conn, err
