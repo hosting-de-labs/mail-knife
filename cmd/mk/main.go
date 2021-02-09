@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
 
@@ -31,23 +32,11 @@ func main() {
 		os.Exit(3)
 	}
 
-	// SMTP Example
-	c := internal.NewClient(internal.LineEndingCrLf)
-	defer c.Close()
+	// prompt
+	sigHandler(exitHandler)
+	app := internal.NewApp(exitHandler)
 
-	tmpSess, err := c.Connect(fmt.Sprintf("%s:%s", host, port))
-	if err != nil {
-		panic(err)
-	}
-	sess = tmpSess
-
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	go stdInReader(wg)
-
-	// waiting for exit
-	wg.Wait()
-	os.Exit(0)
+	app.Run(fmt.Sprintf("%s:%s", host, port))
 }
 
 func stdInReader(wg *sync.WaitGroup) {
@@ -70,4 +59,18 @@ func stdInReader(wg *sync.WaitGroup) {
 			panic(err)
 		}
 	}
+}
+
+func exitHandler() {
+	fmt.Printf("exiting...\n")
+	os.Exit(0)
+}
+
+func sigHandler(exitHandler func()) {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		<-c
+		exitHandler()
+	}()
 }
