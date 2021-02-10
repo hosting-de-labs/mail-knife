@@ -86,6 +86,8 @@ func (conn *Connection) reader(wg *sync.WaitGroup) {
 			break
 		}
 
+		line = strings.TrimSpace(line)
+
 		fmt.Println(line)
 	}
 }
