@@ -2,9 +2,16 @@ package internal
 
 import (
 	"fmt"
-	"sync"
+	"net/textproto"
+	"os"
+	"time"
 
 	"github.com/c-bata/go-prompt"
+)
+
+const (
+	LineEndingLf   string = "\n"
+	LineEndingCrLf string = "\r\n"
 )
 
 var (
@@ -25,44 +32,52 @@ var (
 )
 
 type App struct {
-	prompt      prompt.Prompt
-	exitHandler func()
-	session     Session
+	ExitHandler func()
+	LineEnding  string
+
+	conn   *textproto.Conn
+	prompt prompt.Prompt
 }
 
 func NewApp(exitHandler func()) App {
-	app := App{exitHandler: exitHandler}
+	app := App{
+		ExitHandler: exitHandler,
+		LineEnding:  LineEndingLf,
+	}
 
 	return app
 }
 
-func (a *App) Run(connectAddr string) {
-
-	// SMTP Example
-	c := NewClient(LineEndingCrLf)
-	defer c.Close()
-
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-
-	tmpSess, err := c.Connect(connectAddr)
+func (a *App) Run(connectAddr string) error {
+	tmpConn, err := textproto.Dial("tcp", connectAddr)
 	if err != nil {
-		panic(err)
+		return err
 	}
-
-	a.session = tmpSess
+	a.conn = tmpConn
 
 	a.prompt = *prompt.New(
-		executorFunc(a.session, a.exitHandler),
+		executorFunc(a.conn, a.LineEnding, a.exitHandler),
 		completerFunc(),
 		prompt.OptionTitle("mk: interactive tcp client (like telnet command) on steroids"),
 		prompt.OptionPrefix(">>> "),
 		prompt.OptionInputTextColor(prompt.Yellow),
 	)
 
+	// start prompt
 	go a.prompt.Run()
 
-	wg.Wait()
+	time.Sleep(10 * time.Second)
+
+	return nil
+}
+
+func (a *App) exitHandler() {
+	err := a.conn.Close()
+	if err != nil {
+		fmt.Printf("exit: failed to close connection: %s\n", err)
+	}
+
+	os.Exit(0)
 }
 
 func completerFunc() func(document prompt.Document) []prompt.Suggest {
@@ -75,14 +90,14 @@ func completerFunc() func(document prompt.Document) []prompt.Suggest {
 	}
 }
 
-func executorFunc(session Session, exitHandler func()) func(cmd string) {
+func executorFunc(conn *textproto.Conn, lineEnding string, exitHandler func()) func(cmd string) {
 	return func(cmd string) {
 		if cmd == "exit" {
 			exitHandler()
 			return
 		}
 
-		err := session.Send(cmd)
+		err := conn.PrintfLine(cmd + lineEnding)
 		if err != nil {
 			fmt.Printf("Error: %s\n", err)
 		}

@@ -1,20 +1,14 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
-	"strings"
-	"sync"
+
+	"github.com/hosting-de-labs/mail-knife/internal/flow"
 
 	"github.com/hosting-de-labs/mail-knife/internal"
-)
-
-var (
-	sess internal.Session
 )
 
 func main() {
@@ -37,28 +31,6 @@ func main() {
 	app := internal.NewApp(exitHandler)
 
 	app.Run(fmt.Sprintf("%s:%s", host, port))
-}
-
-func stdInReader(wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	reader := bufio.NewReader(os.Stdin)
-	for {
-		line, err := reader.ReadString('\n')
-		if err == io.EOF {
-			break
-		}
-
-		if err != nil {
-			fmt.Printf("shell: %s\n", err)
-		}
-
-		msg := strings.TrimSpace(line)
-		err = sess.Send(msg)
-		if err != nil {
-			panic(err)
-		}
-	}
 }
 
 func exitHandler() {
