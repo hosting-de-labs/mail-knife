@@ -27,6 +27,8 @@ var (
 			{Text: "AUTH PLAIN", Description: "Authenticate using plain method"},
 			{Text: "MAIL FROM: ", Description: "Send 'MAIL FROM: '"},
 			{Text: "RCPT TO: ", Description: "Send 'RCPT TO: '"},
+			{Text: "DATA", Description: "Send 'DATA'"},
+			{Text: "QUIT", Description: "Send 'QUIT'"},
 		},
 	}
 )
