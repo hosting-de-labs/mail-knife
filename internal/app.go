@@ -72,7 +72,7 @@ func (a *App) Run(connectAddr string) error {
 	)
 
 	// create reader / writer to intercept protocol messages
-	r, w := logInterceptor(&a.conn.Reader, &a.conn.Writer)
+	r, w := logInterceptor(&a.conn.Reader, &a.conn.Writer, a.ExitHandler)
 
 	// run flows if any
 	a.runFlows(r, w)
@@ -108,10 +108,7 @@ func (a *App) runFlows(r *textproto.Reader, w *textproto.Writer) {
 }
 
 func (a *App) exitHandler() {
-	err := a.conn.Close()
-	if err != nil {
-		fmt.Printf("exit: failed to close connection: %s\n", err)
-	}
+	a.conn.Close()
 
 	os.Exit(0)
 }
@@ -140,16 +137,16 @@ func executorFunc(conn *textproto.Conn, lineEnding string, exitHandler func()) f
 	}
 }
 
-func logInterceptor(r *textproto.Reader, w *textproto.Writer) (*textproto.Reader, *textproto.Writer) {
+func logInterceptor(r *textproto.Reader, w *textproto.Writer, exitHandler func()) (*textproto.Reader, *textproto.Writer) {
 	done := make(chan bool)
 
 	colorReceive := color.New(color.FgCyan)
 	colorSend := color.New(color.FgYellow)
 
-	readerPipeR, readerPipeW := io.Pipe()
+	receiverPipeR, receiverPipeW := io.Pipe()
 
-	readerTextR := textproto.NewReader(bufio.NewReader(readerPipeR))
-	readerTextW := textproto.NewWriter(bufio.NewWriter(readerPipeW))
+	receiverTextR := textproto.NewReader(bufio.NewReader(receiverPipeR))
+	receiverTextW := textproto.NewWriter(bufio.NewWriter(receiverPipeW))
 	go func(r *textproto.Reader, w *textproto.Writer) {
 		for {
 			l, err := r.ReadLine()
@@ -159,37 +156,47 @@ func logInterceptor(r *textproto.Reader, w *textproto.Writer) (*textproto.Reader
 					break
 				}
 
-				fmt.Printf("readLogger error read: %s\n", err)
+				fmt.Printf("receive-logger error read: %s\n", err)
 			}
 
 			_, _ = colorReceive.Printf("<<< %s\n", l)
 			err = w.PrintfLine(l)
 			if err != nil {
-				fmt.Printf("readLogger error write: %s\n")
+				fmt.Printf("receive-logger error write: %s\n")
 			}
 		}
-	}(r, readerTextW)
+	}(r, receiverTextW)
 
-	writerPipeR, writerPipeW := io.Pipe()
+	senderPipeR, senderPipeW := io.Pipe()
 
-	writerTextR := textproto.NewReader(bufio.NewReader(writerPipeR))
-	writerTextW := textproto.NewWriter(bufio.NewWriter(writerPipeW))
+	senderTextR := textproto.NewReader(bufio.NewReader(senderPipeR))
+	senderTextW := textproto.NewWriter(bufio.NewWriter(senderPipeW))
 	go func(r *textproto.Reader, w *textproto.Writer) {
 		for {
 			l, err := r.ReadLine()
 			if err != nil {
-				fmt.Printf("writeLogger error read: %s\n", err)
+				if err == io.EOF {
+					break
+				}
+
+				fmt.Printf("send-logger error read: %s\n", err)
 			}
 
 			_, _ = colorSend.Printf(">>> %s\n", l)
 			err = w.PrintfLine(l)
 			if err != nil {
-				fmt.Printf("writeLogger error write: %s\n")
+				fmt.Printf("send-logger error write: %s\n")
 			}
 		}
-	}(writerTextR, w)
+	}(senderTextR, w)
 
-	return readerTextR, writerTextW
+	go func(chan<- bool) {
+		<-done
+		senderPipeW.Close()
+		exitHandler()
+	}(done)
+
+	return receiverTextR, senderTextW
 }
 
 func connReader(r *textproto.Reader) {
