@@ -6,9 +6,8 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/hosting-de-labs/mail-knife/internal/flow"
-
 	"github.com/hosting-de-labs/mail-knife/internal"
+	"github.com/hosting-de-labs/mail-knife/internal/flow"
 )
 
 func main() {
@@ -30,7 +29,14 @@ func main() {
 	sigHandler(exitHandler)
 	app := internal.NewApp(exitHandler)
 
-	app.Run(fmt.Sprintf("%s:%s", host, port))
+	app.Flows = []internal.Flow{
+		flow.SMTPHelo{},
+	}
+
+	err := app.Run(fmt.Sprintf("%s:%s", host, port))
+	if err != nil {
+		fmt.Printf("error running app: %s\n", err)
+	}
 }
 
 func exitHandler() {

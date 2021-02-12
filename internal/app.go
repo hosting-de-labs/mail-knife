@@ -1,10 +1,12 @@
 package internal
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"net/textproto"
 	"os"
-	"time"
+	"sync"
 
 	"github.com/c-bata/go-prompt"
 )
@@ -35,15 +37,18 @@ var (
 
 type App struct {
 	ExitHandler func()
+	Flows       []Flow
 	LineEnding  string
 
-	conn   *textproto.Conn
-	prompt prompt.Prompt
+	conn       *textproto.Conn
+	connClosed chan bool
+	prompt     prompt.Prompt
 }
 
 func NewApp(exitHandler func()) App {
 	app := App{
 		ExitHandler: exitHandler,
+		Flows:       []Flow{},
 		LineEnding:  LineEndingLf,
 	}
 
@@ -61,16 +66,44 @@ func (a *App) Run(connectAddr string) error {
 		executorFunc(a.conn, a.LineEnding, a.exitHandler),
 		completerFunc(),
 		prompt.OptionTitle("mk: interactive tcp client (like telnet command) on steroids"),
-		prompt.OptionPrefix(">>> "),
+		prompt.OptionPrefix(""),
 		prompt.OptionInputTextColor(prompt.Yellow),
 	)
+
+	// create reader / writer to intercept protocol messages
+	r, w := logInterceptor(&a.conn.Reader, &a.conn.Writer)
+
+	// run flows if any
+	a.runFlows(r, w)
+
+	// start connection reader
+	go connReader(r)
 
 	// start prompt
 	go a.prompt.Run()
 
-	time.Sleep(10 * time.Second)
+	<-a.connClosed
 
 	return nil
+}
+
+func (a *App) runFlows(r *textproto.Reader, w *textproto.Writer) {
+	if len(a.Flows) > 0 {
+		// run flows
+		wgFlows := &sync.WaitGroup{}
+		wgFlows.Add(1)
+		go func(wg *sync.WaitGroup) {
+			defer wg.Done()
+			for _, f := range a.Flows {
+				err := f.Run(r, w)
+				if err != nil {
+					fmt.Printf("Error on running flow %T: %s\n", f, err)
+				}
+			}
+		}(wgFlows)
+
+		wgFlows.Wait()
+	}
 }
 
 func (a *App) exitHandler() {
@@ -102,6 +135,69 @@ func executorFunc(conn *textproto.Conn, lineEnding string, exitHandler func()) f
 		err := conn.PrintfLine(cmd + lineEnding)
 		if err != nil {
 			fmt.Printf("Error: %s\n", err)
+		}
+	}
+}
+
+func logInterceptor(r *textproto.Reader, w *textproto.Writer) (*textproto.Reader, *textproto.Writer) {
+	done := make(chan bool)
+
+	readerPipeR, readerPipeW := io.Pipe()
+
+	readerTextR := textproto.NewReader(bufio.NewReader(readerPipeR))
+	readerTextW := textproto.NewWriter(bufio.NewWriter(readerPipeW))
+	go func(r *textproto.Reader, w *textproto.Writer) {
+		for {
+			l, err := r.ReadLine()
+			if err != nil {
+				if err == io.EOF {
+					done <- true
+					break
+				}
+
+				fmt.Printf("readLogger error read: %s\n", err)
+			}
+
+			fmt.Printf("<<< %s\n", l)
+			err = w.PrintfLine(l)
+			if err != nil {
+				fmt.Printf("readLogger error write: %s\n")
+			}
+		}
+	}(r, readerTextW)
+
+	writerPipeR, writerPipeW := io.Pipe()
+
+	writerTextR := textproto.NewReader(bufio.NewReader(writerPipeR))
+	writerTextW := textproto.NewWriter(bufio.NewWriter(writerPipeW))
+	go func(r *textproto.Reader, w *textproto.Writer) {
+		for {
+			l, err := r.ReadLine()
+			if err != nil {
+				fmt.Printf("writeLogger error read: %s\n", err)
+			}
+
+			fmt.Printf(">>> %s\n", l)
+			err = w.PrintfLine(l)
+			if err != nil {
+				fmt.Printf("writeLogger error write: %s\n")
+			}
+		}
+	}(writerTextR, w)
+
+	return readerTextR, writerTextW
+}
+
+func connReader(r *textproto.Reader) {
+	for {
+		_, err := r.ReadLine()
+		if err != nil {
+			if err == io.EOF {
+				// close on EOF
+				break
+			}
+
+			fmt.Printf("connReader: error occured: %s\n", err)
 		}
 	}
 }
