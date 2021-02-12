@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/c-bata/go-prompt"
+	"github.com/fatih/color"
 )
 
 const (
@@ -142,6 +143,9 @@ func executorFunc(conn *textproto.Conn, lineEnding string, exitHandler func()) f
 func logInterceptor(r *textproto.Reader, w *textproto.Writer) (*textproto.Reader, *textproto.Writer) {
 	done := make(chan bool)
 
+	colorReceive := color.New(color.FgCyan)
+	colorSend := color.New(color.FgYellow)
+
 	readerPipeR, readerPipeW := io.Pipe()
 
 	readerTextR := textproto.NewReader(bufio.NewReader(readerPipeR))
@@ -158,7 +162,7 @@ func logInterceptor(r *textproto.Reader, w *textproto.Writer) (*textproto.Reader
 				fmt.Printf("readLogger error read: %s\n", err)
 			}
 
-			fmt.Printf("<<< %s\n", l)
+			_, _ = colorReceive.Printf("<<< %s\n", l)
 			err = w.PrintfLine(l)
 			if err != nil {
 				fmt.Printf("readLogger error write: %s\n")
@@ -177,7 +181,7 @@ func logInterceptor(r *textproto.Reader, w *textproto.Writer) (*textproto.Reader
 				fmt.Printf("writeLogger error read: %s\n", err)
 			}
 
-			fmt.Printf(">>> %s\n", l)
+			_, _ = colorSend.Printf(">>> %s\n", l)
 			err = w.PrintfLine(l)
 			if err != nil {
 				fmt.Printf("writeLogger error write: %s\n")
