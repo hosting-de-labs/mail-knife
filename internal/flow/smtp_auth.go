@@ -3,7 +3,6 @@ package flow
 import (
 	"encoding/base64"
 	"fmt"
-	"net/textproto"
 	"strings"
 	"time"
 
@@ -16,14 +15,14 @@ var (
 
 type SMTPAuth struct{}
 
-func (s SMTPAuth) Run(r *textproto.Reader, w *textproto.Writer, args []string) error {
+func (s SMTPAuth) Run(c *internal.Conn, args []string) error {
 	if len(args) < 2 {
 		return fmt.Errorf("run: insufficient arguments: username and password needed")
 	}
 
 	bannerFound := false
 	for !bannerFound {
-		l, err := r.ReadLine()
+		l, err := c.Reader.ReadLine()
 		if err != nil {
 			return err
 		}
@@ -35,14 +34,14 @@ func (s SMTPAuth) Run(r *textproto.Reader, w *textproto.Writer, args []string) e
 
 	time.Sleep(500 * time.Millisecond)
 
-	err := w.PrintfLine("EHLO host.name")
+	err := c.Writer.PrintfLine("EHLO host.name")
 	if err != nil {
 		return err
 	}
 
 	authMethods := make(map[string]interface{})
 	for len(authMethods) == 0 {
-		l, err := r.ReadLine()
+		l, err := c.Reader.ReadLine()
 		if err != nil {
 			return err
 		}
@@ -59,7 +58,7 @@ func (s SMTPAuth) Run(r *textproto.Reader, w *textproto.Writer, args []string) e
 	}
 
 	if _, ok := authMethods["plain"]; ok {
-		err = w.PrintfLine("AUTH PLAIN")
+		err = c.Writer.PrintfLine("AUTH PLAIN")
 		if err != nil {
 			return err
 		}
@@ -67,7 +66,7 @@ func (s SMTPAuth) Run(r *textproto.Reader, w *textproto.Writer, args []string) e
 		credString := fmt.Sprintf("%s:%s", args[0], args[1])
 		credEnc := base64.StdEncoding.EncodeToString([]byte(credString))
 
-		err = w.PrintfLine(credEnc)
+		err = c.Writer.PrintfLine(credEnc)
 		if err != nil {
 			return err
 		}

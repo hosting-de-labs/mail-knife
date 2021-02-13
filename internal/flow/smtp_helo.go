@@ -1,7 +1,6 @@
 package flow
 
 import (
-	"net/textproto"
 	"strings"
 	"time"
 
@@ -14,10 +13,10 @@ var (
 
 type SMTPHelo struct{}
 
-func (s SMTPHelo) Run(r *textproto.Reader, w *textproto.Writer, _ []string) error {
+func (s SMTPHelo) Run(c *internal.Conn, _ []string) error {
 	bannerFound := false
 	for !bannerFound {
-		l, err := r.ReadLine()
+		l, err := c.Reader.ReadLine()
 		if err != nil {
 			return err
 		}
@@ -28,7 +27,7 @@ func (s SMTPHelo) Run(r *textproto.Reader, w *textproto.Writer, _ []string) erro
 	}
 
 	time.Sleep(500 * time.Millisecond)
-	err := w.PrintfLine("EHLO host.name")
+	err := c.Writer.PrintfLine("EHLO host.name")
 	if err != nil {
 		return err
 	}

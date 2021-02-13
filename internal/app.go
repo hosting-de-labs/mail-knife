@@ -1,16 +1,13 @@
 package internal
 
 import (
-	"bufio"
 	"fmt"
-	"io"
 	"net/textproto"
 	"os"
 	"strings"
 	"sync"
 
 	"github.com/c-bata/go-prompt"
-	"github.com/fatih/color"
 )
 
 const (
@@ -41,7 +38,7 @@ type App struct {
 	ExitHandler func()
 	Flows       []Flow
 
-	conn       *textproto.Conn
+	conn       *Conn
 	connClosed chan bool
 	prompt     prompt.Prompt
 }
@@ -56,28 +53,25 @@ func NewApp(exitHandler func()) App {
 }
 
 func (a *App) Run(connectAddr string, args []string) error {
-	tmpConn, err := textproto.Dial("tcp", connectAddr)
+	conn, err := Dial(connectAddr, a.ExitHandler)
 	if err != nil {
 		return err
 	}
-	a.conn = tmpConn
+	a.conn = conn
 
 	a.prompt = *prompt.New(
-		executorFunc(a.conn, a.exitHandler),
+		executorFunc(a.conn.Writer, a.exitHandler),
 		completerFunc(),
 		prompt.OptionTitle("mk: interactive tcp client (like telnet command) on steroids"),
 		prompt.OptionPrefix(""),
 		prompt.OptionInputTextColor(prompt.Yellow),
 	)
 
-	// create reader / writer to intercept protocol messages
-	r, w := logInterceptor(&a.conn.Reader, &a.conn.Writer, a.ExitHandler)
-
 	// run flows if any
-	a.runFlows(r, w, args)
+	a.runFlows(conn, args)
 
 	// start connection reader
-	go connReader(r)
+	go connReader(a.conn.Reader)
 
 	// start prompt
 	go a.prompt.Run()
@@ -87,7 +81,7 @@ func (a *App) Run(connectAddr string, args []string) error {
 	return nil
 }
 
-func (a *App) runFlows(r *textproto.Reader, w *textproto.Writer, args []string) {
+func (a *App) runFlows(c *Conn, args []string) {
 	if len(a.Flows) > 0 {
 		// run flows
 		wgFlows := &sync.WaitGroup{}
@@ -95,7 +89,7 @@ func (a *App) runFlows(r *textproto.Reader, w *textproto.Writer, args []string) 
 		go func(wg *sync.WaitGroup) {
 			defer wg.Done()
 			for _, f := range a.Flows {
-				err := f.Run(r, w, args)
+				err := f.Run(c, args)
 				if err != nil {
 					fmt.Printf("Error on running flow %T: %s\n", f, err)
 				}
@@ -122,7 +116,7 @@ func completerFunc() func(document prompt.Document) []prompt.Suggest {
 	}
 }
 
-func executorFunc(conn *textproto.Conn, exitHandler func()) func(cmd string) {
+func executorFunc(w *textproto.Writer, exitHandler func()) func(cmd string) {
 	return func(cmd string) {
 		cmd = strings.TrimSpace(cmd)
 
@@ -131,85 +125,9 @@ func executorFunc(conn *textproto.Conn, exitHandler func()) func(cmd string) {
 			return
 		}
 
-		err := conn.PrintfLine(cmd)
+		err := w.PrintfLine(cmd)
 		if err != nil {
 			fmt.Printf("Error: %s\n", err)
-		}
-	}
-}
-
-func logInterceptor(r *textproto.Reader, w *textproto.Writer, exitHandler func()) (*textproto.Reader, *textproto.Writer) {
-	done := make(chan bool)
-
-	colorReceive := color.New(color.FgCyan)
-	colorSend := color.New(color.FgYellow)
-
-	receiverPipeR, receiverPipeW := io.Pipe()
-
-	receiverTextR := textproto.NewReader(bufio.NewReader(receiverPipeR))
-	receiverTextW := textproto.NewWriter(bufio.NewWriter(receiverPipeW))
-	go func(r *textproto.Reader, w *textproto.Writer) {
-		for {
-			l, err := r.ReadLine()
-			if err != nil {
-				if err == io.EOF {
-					done <- true
-					break
-				}
-
-				fmt.Printf("receive-logger error read: %s\n", err)
-			}
-
-			_, _ = colorReceive.Printf("<<< %s\n", l)
-			err = w.PrintfLine(l)
-			if err != nil {
-				fmt.Printf("receive-logger error write: %s\n")
-			}
-		}
-	}(r, receiverTextW)
-
-	senderPipeR, senderPipeW := io.Pipe()
-
-	senderTextR := textproto.NewReader(bufio.NewReader(senderPipeR))
-	senderTextW := textproto.NewWriter(bufio.NewWriter(senderPipeW))
-	go func(r *textproto.Reader, w *textproto.Writer) {
-		for {
-			l, err := r.ReadLine()
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-
-				fmt.Printf("send-logger error read: %s\n", err)
-			}
-
-			_, _ = colorSend.Printf(">>> %s\n", l)
-			err = w.PrintfLine(l)
-			if err != nil {
-				fmt.Printf("send-logger error write: %s\n")
-			}
-		}
-	}(senderTextR, w)
-
-	go func(chan<- bool) {
-		<-done
-		senderPipeW.Close()
-		exitHandler()
-	}(done)
-
-	return receiverTextR, senderTextW
-}
-
-func connReader(r *textproto.Reader) {
-	for {
-		_, err := r.ReadLine()
-		if err != nil {
-			if err == io.EOF {
-				// close on EOF
-				break
-			}
-
-			fmt.Printf("connReader: error occured: %s\n", err)
 		}
 	}
 }
