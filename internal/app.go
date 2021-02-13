@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/textproto"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/c-bata/go-prompt"
@@ -39,7 +40,6 @@ var (
 type App struct {
 	ExitHandler func()
 	Flows       []Flow
-	LineEnding  string
 
 	conn       *textproto.Conn
 	connClosed chan bool
@@ -50,7 +50,6 @@ func NewApp(exitHandler func()) App {
 	app := App{
 		ExitHandler: exitHandler,
 		Flows:       []Flow{},
-		LineEnding:  LineEndingLf,
 	}
 
 	return app
@@ -64,7 +63,7 @@ func (a *App) Run(connectAddr string) error {
 	a.conn = tmpConn
 
 	a.prompt = *prompt.New(
-		executorFunc(a.conn, a.LineEnding, a.exitHandler),
+		executorFunc(a.conn, a.exitHandler),
 		completerFunc(),
 		prompt.OptionTitle("mk: interactive tcp client (like telnet command) on steroids"),
 		prompt.OptionPrefix(""),
@@ -123,14 +122,16 @@ func completerFunc() func(document prompt.Document) []prompt.Suggest {
 	}
 }
 
-func executorFunc(conn *textproto.Conn, lineEnding string, exitHandler func()) func(cmd string) {
+func executorFunc(conn *textproto.Conn, exitHandler func()) func(cmd string) {
 	return func(cmd string) {
+		cmd = strings.TrimSpace(cmd)
+
 		if cmd == "exit" {
 			exitHandler()
 			return
 		}
 
-		err := conn.PrintfLine(cmd + lineEnding)
+		err := conn.PrintfLine(cmd)
 		if err != nil {
 			fmt.Printf("Error: %s\n", err)
 		}
