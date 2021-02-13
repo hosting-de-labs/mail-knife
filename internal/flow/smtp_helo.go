@@ -14,7 +14,7 @@ var (
 
 type SMTPHelo struct{}
 
-func (s SMTPHelo) Run(r *textproto.Reader, w *textproto.Writer) error {
+func (s SMTPHelo) Run(r *textproto.Reader, w *textproto.Writer, _ []string) error {
 	bannerFound := false
 	for !bannerFound {
 		l, err := r.ReadLine()

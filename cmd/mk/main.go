@@ -30,10 +30,11 @@ func main() {
 	app := internal.NewApp(exitHandler)
 
 	app.Flows = []internal.Flow{
-		flow.SMTPHelo{},
+		//flow.SMTPHelo{},
+		flow.SMTPAuth{},
 	}
 
-	err := app.Run(fmt.Sprintf("%s:%s", host, port))
+	err := app.Run(fmt.Sprintf("%s:%s", host, port), args[2:])
 	if err != nil {
 		fmt.Printf("error running app: %s\n", err)
 	}

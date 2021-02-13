@@ -55,7 +55,7 @@ func NewApp(exitHandler func()) App {
 	return app
 }
 
-func (a *App) Run(connectAddr string) error {
+func (a *App) Run(connectAddr string, args []string) error {
 	tmpConn, err := textproto.Dial("tcp", connectAddr)
 	if err != nil {
 		return err
@@ -74,7 +74,7 @@ func (a *App) Run(connectAddr string) error {
 	r, w := logInterceptor(&a.conn.Reader, &a.conn.Writer, a.ExitHandler)
 
 	// run flows if any
-	a.runFlows(r, w)
+	a.runFlows(r, w, args)
 
 	// start connection reader
 	go connReader(r)
@@ -87,7 +87,7 @@ func (a *App) Run(connectAddr string) error {
 	return nil
 }
 
-func (a *App) runFlows(r *textproto.Reader, w *textproto.Writer) {
+func (a *App) runFlows(r *textproto.Reader, w *textproto.Writer, args []string) {
 	if len(a.Flows) > 0 {
 		// run flows
 		wgFlows := &sync.WaitGroup{}
@@ -95,7 +95,7 @@ func (a *App) runFlows(r *textproto.Reader, w *textproto.Writer) {
 		go func(wg *sync.WaitGroup) {
 			defer wg.Done()
 			for _, f := range a.Flows {
-				err := f.Run(r, w)
+				err := f.Run(r, w, args)
 				if err != nil {
 					fmt.Printf("Error on running flow %T: %s\n", f, err)
 				}

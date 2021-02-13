@@ -5,5 +5,5 @@ import (
 )
 
 type Flow interface {
-	Run(r *textproto.Reader, w *textproto.Writer) error
+	Run(r *textproto.Reader, w *textproto.Writer, args []string) error
 }
