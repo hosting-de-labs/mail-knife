@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/textproto"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/fatih/color"
 )
@@ -14,10 +17,9 @@ var (
 )
 
 type Conn struct {
-	Reader *textproto.Reader
-	Writer *textproto.Writer
-
-	rawConn *textproto.Conn
+	messages chan string
+	rawConn  *textproto.Conn
+	writer   *textproto.Writer
 }
 
 func Dial(addr string, exitHandler func()) (*Conn, error) {
@@ -29,11 +31,16 @@ func Dial(addr string, exitHandler func()) (*Conn, error) {
 	// create reader / writer to intercept protocol messages
 	r, w := logInterceptor(&rawConn.Reader, &rawConn.Writer, exitHandler)
 
-	return &Conn{
-		Reader:  r,
-		Writer:  w,
-		rawConn: rawConn,
-	}, nil
+	c := &Conn{
+		messages: make(chan string, 64),
+		rawConn:  rawConn,
+		writer:   w,
+	}
+
+	// start connection reader
+	go connReader(r, c.messages)
+
+	return c, nil
 }
 
 // Close implements io.Closer interface
@@ -41,8 +48,42 @@ func (c Conn) Close() error {
 	return c.rawConn.Close()
 }
 
+func (c Conn) WaitMessage(prefix string, timeout time.Duration) (string, error) {
+	for {
+		select {
+		case l := <-c.messages:
+			if strings.HasPrefix(l, prefix) {
+				return l, nil
+			}
+		case <-time.After(timeout):
+			return "", fmt.Errorf("wait message: timeout reached")
+		}
+	}
+}
+
+func (c Conn) PrintfLine(format string, args ...interface{}) error {
+	return c.writer.PrintfLine(format, args...)
+}
+
+func connReader(r *textproto.Reader, lines chan<- string) {
+	for {
+		l, err := r.ReadLine()
+		if err != nil {
+			if err == io.EOF {
+				// close on EOF
+				break
+			}
+
+			fmt.Printf("connReader: error occured: %s\n", err)
+		}
+
+		lines <- l
+	}
+}
+
 func logInterceptor(r *textproto.Reader, w *textproto.Writer, exitHandler func()) (*textproto.Reader, *textproto.Writer) {
 	done := make(chan bool)
+	printMux := &sync.Mutex{}
 
 	colorReceive := color.New(color.FgCyan)
 	colorSend := color.New(color.FgYellow)
@@ -63,11 +104,14 @@ func logInterceptor(r *textproto.Reader, w *textproto.Writer, exitHandler func()
 				fmt.Printf("receive-logger error read: %s\n", err)
 			}
 
-			_, _ = colorReceive.Printf("<<< %s\n", l)
 			err = w.PrintfLine(l)
 			if err != nil {
 				fmt.Printf("receive-logger error write: %s\n")
 			}
+
+			printMux.Lock()
+			_, _ = colorReceive.Printf("<<< %s\n", l)
+			printMux.Unlock()
 		}
 	}(r, receiverTextW)
 
@@ -86,11 +130,14 @@ func logInterceptor(r *textproto.Reader, w *textproto.Writer, exitHandler func()
 				fmt.Printf("send-logger error read: %s\n", err)
 			}
 
-			_, _ = colorSend.Printf(">>> %s\n", l)
 			err = w.PrintfLine(l)
 			if err != nil {
 				fmt.Printf("send-logger error write: %s\n")
 			}
+
+			printMux.Lock()
+			_, _ = colorSend.Printf(">>> %s\n", l)
+			printMux.Unlock()
 		}
 	}(senderTextR, w)
 
@@ -101,18 +148,4 @@ func logInterceptor(r *textproto.Reader, w *textproto.Writer, exitHandler func()
 	}(done)
 
 	return receiverTextR, senderTextW
-}
-
-func connReader(r *textproto.Reader) {
-	for {
-		_, err := r.ReadLine()
-		if err != nil {
-			if err == io.EOF {
-				// close on EOF
-				break
-			}
-
-			fmt.Printf("connReader: error occured: %s\n", err)
-		}
-	}
 }

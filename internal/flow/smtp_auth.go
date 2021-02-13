@@ -20,45 +20,20 @@ func (s SMTPAuth) Run(c *internal.Conn, args []string) error {
 		return fmt.Errorf("run: insufficient arguments: username and password needed")
 	}
 
-	bannerFound := false
-	for !bannerFound {
-		l, err := c.Reader.ReadLine()
-		if err != nil {
-			return err
-		}
-
-		if strings.HasPrefix(l, "220 ") {
-			bannerFound = true
-		}
-	}
-
-	time.Sleep(500 * time.Millisecond)
-
-	err := c.Writer.PrintfLine("EHLO host.name")
+	helo := SMTPHelo{}
+	err := helo.Run(c, []string{})
 	if err != nil {
 		return err
 	}
 
-	authMethods := make(map[string]interface{})
-	for len(authMethods) == 0 {
-		l, err := c.Reader.ReadLine()
-		if err != nil {
-			return err
-		}
-
-		if strings.HasPrefix(l, "250-AUTH") {
-			if strings.Contains(l, "LOGIN") {
-				authMethods["login"] = true
-			}
-
-			if strings.Contains(l, "PLAIN") {
-				authMethods["plain"] = true
-			}
-		}
+	l, err := c.WaitMessage("250-AUTH", 1*time.Second)
+	if err != nil {
+		return fmt.Errorf("smtp-auth: %s", err)
 	}
 
+	authMethods := parseAuthMethods(l)
 	if _, ok := authMethods["plain"]; ok {
-		err = c.Writer.PrintfLine("AUTH PLAIN")
+		err = c.PrintfLine("AUTH PLAIN")
 		if err != nil {
 			return err
 		}
@@ -66,7 +41,7 @@ func (s SMTPAuth) Run(c *internal.Conn, args []string) error {
 		credString := fmt.Sprintf("%s:%s", args[0], args[1])
 		credEnc := base64.StdEncoding.EncodeToString([]byte(credString))
 
-		err = c.Writer.PrintfLine(credEnc)
+		err = c.PrintfLine(credEnc)
 		if err != nil {
 			return err
 		}
@@ -75,4 +50,16 @@ func (s SMTPAuth) Run(c *internal.Conn, args []string) error {
 	}
 
 	return nil
+}
+
+func parseAuthMethods(l string) map[string]bool {
+	authMethods := make(map[string]bool)
+	if strings.Contains(l, "LOGIN") {
+		authMethods["login"] = true
+	}
+
+	if strings.Contains(l, "PLAIN") {
+		authMethods["plain"] = true
+	}
+	return authMethods
 }

@@ -1,7 +1,7 @@
 package flow
 
 import (
-	"strings"
+	"fmt"
 	"time"
 
 	"github.com/hosting-de-labs/mail-knife/internal"
@@ -14,20 +14,13 @@ var (
 type SMTPHelo struct{}
 
 func (s SMTPHelo) Run(c *internal.Conn, _ []string) error {
-	bannerFound := false
-	for !bannerFound {
-		l, err := c.Reader.ReadLine()
-		if err != nil {
-			return err
-		}
-
-		if strings.HasPrefix(l, "220 ") {
-			bannerFound = true
-		}
+	_, err := c.WaitMessage("220 ", 10*time.Second)
+	if err != nil {
+		return fmt.Errorf("smtp-helo: %s", err)
 	}
 
 	time.Sleep(500 * time.Millisecond)
-	err := c.Writer.PrintfLine("EHLO host.name")
+	err = c.PrintfLine("EHLO host.name")
 	if err != nil {
 		return err
 	}

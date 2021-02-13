@@ -2,7 +2,6 @@ package internal
 
 import (
 	"fmt"
-	"net/textproto"
 	"os"
 	"strings"
 	"sync"
@@ -60,7 +59,7 @@ func (a *App) Run(connectAddr string, args []string) error {
 	a.conn = conn
 
 	a.prompt = *prompt.New(
-		executorFunc(a.conn.Writer, a.exitHandler),
+		executorFunc(a.conn, a.exitHandler),
 		completerFunc(),
 		prompt.OptionTitle("mk: interactive tcp client (like telnet command) on steroids"),
 		prompt.OptionPrefix(""),
@@ -69,9 +68,6 @@ func (a *App) Run(connectAddr string, args []string) error {
 
 	// run flows if any
 	a.runFlows(conn, args)
-
-	// start connection reader
-	go connReader(a.conn.Reader)
 
 	// start prompt
 	go a.prompt.Run()
@@ -116,7 +112,7 @@ func completerFunc() func(document prompt.Document) []prompt.Suggest {
 	}
 }
 
-func executorFunc(w *textproto.Writer, exitHandler func()) func(cmd string) {
+func executorFunc(w *Conn, exitHandler func()) func(cmd string) {
 	return func(cmd string) {
 		cmd = strings.TrimSpace(cmd)
 
