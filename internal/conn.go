@@ -25,7 +25,7 @@ type Conn struct {
 }
 
 func Dial(addr string, exitHandler func()) (*Conn, error) {
-	netConn, err := net.Dial("tcp", addr)
+	netConn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("dial: %s", err)
 	}
