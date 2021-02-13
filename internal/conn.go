@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"net"
 	"net/textproto"
 	"strings"
 	"sync"
@@ -17,35 +18,42 @@ var (
 )
 
 type Conn struct {
+	Text *textproto.Conn
+
 	messages chan string
-	rawConn  *textproto.Conn
-	writer   *textproto.Writer
+	netConn  net.Conn
 }
 
 func Dial(addr string, exitHandler func()) (*Conn, error) {
-	rawConn, err := textproto.Dial("tcp", addr)
+	netConn, err := net.Dial("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("dial: %s", err)
 	}
 
+	rawConn := textproto.NewConn(netConn)
+
 	// create reader / writer to intercept protocol messages
-	r, w := logInterceptor(&rawConn.Reader, &rawConn.Writer, exitHandler)
+	r, w := logInterceptor(rawConn, exitHandler)
+
+	logConn := textproto.NewConn(netConn)
+	logConn.Reader = *r
+	logConn.Writer = *w
 
 	c := &Conn{
 		messages: make(chan string, 64),
-		rawConn:  rawConn,
-		writer:   w,
+		netConn:  netConn,
+		Text:     logConn,
 	}
 
 	// start connection reader
-	go connReader(r, c.messages)
+	go connReader(&logConn.Reader, c.messages)
 
 	return c, nil
 }
 
 // Close implements io.Closer interface
 func (c Conn) Close() error {
-	return c.rawConn.Close()
+	return c.netConn.Close()
 }
 
 func (c Conn) WaitMessage(prefix string, timeout time.Duration) (string, error) {
@@ -62,7 +70,7 @@ func (c Conn) WaitMessage(prefix string, timeout time.Duration) (string, error) 
 }
 
 func (c Conn) PrintfLine(format string, args ...interface{}) error {
-	return c.writer.PrintfLine(format, args...)
+	return c.Text.PrintfLine(format, args...)
 }
 
 func connReader(r *textproto.Reader, lines chan<- string) {
@@ -81,7 +89,7 @@ func connReader(r *textproto.Reader, lines chan<- string) {
 	}
 }
 
-func logInterceptor(r *textproto.Reader, w *textproto.Writer, exitHandler func()) (*textproto.Reader, *textproto.Writer) {
+func logInterceptor(c *textproto.Conn, exitHandler func()) (*textproto.Reader, *textproto.Writer) {
 	done := make(chan bool)
 	printMux := &sync.Mutex{}
 
@@ -113,7 +121,7 @@ func logInterceptor(r *textproto.Reader, w *textproto.Writer, exitHandler func()
 			_, _ = colorReceive.Printf("<<< %s\n", l)
 			printMux.Unlock()
 		}
-	}(r, receiverTextW)
+	}(&c.Reader, receiverTextW)
 
 	senderPipeR, senderPipeW := io.Pipe()
 
@@ -139,7 +147,7 @@ func logInterceptor(r *textproto.Reader, w *textproto.Writer, exitHandler func()
 			_, _ = colorSend.Printf(">>> %s\n", l)
 			printMux.Unlock()
 		}
-	}(senderTextR, w)
+	}(senderTextR, &c.Writer)
 
 	go func(chan<- bool) {
 		<-done

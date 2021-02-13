@@ -2,6 +2,7 @@ package flow
 
 import (
 	"fmt"
+	"net/smtp"
 	"time"
 
 	"github.com/hosting-de-labs/mail-knife/internal"
@@ -14,13 +15,15 @@ var (
 type SMTPHelo struct{}
 
 func (s SMTPHelo) Run(c *internal.Conn, _ []string) error {
-	_, err := c.WaitMessage("220 ", 10*time.Second)
+	msg := "220 "
+	_, err := c.WaitMessage(msg, 10*time.Second)
 	if err != nil {
-		return fmt.Errorf("smtp-helo: %s", err)
+		return fmt.Errorf("failed waiting for message %q: %s", msg, err)
 	}
 
 	time.Sleep(500 * time.Millisecond)
-	err = c.PrintfLine("EHLO host.name")
+	smtpC := smtp.Client{Text: c.Text}
+	err = smtpC.Hello("host.name")
 	if err != nil {
 		return err
 	}

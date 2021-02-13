@@ -17,7 +17,7 @@ type SMTPAuth struct{}
 
 func (s SMTPAuth) Run(c *internal.Conn, args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("run: insufficient arguments: username and password needed")
+		return fmt.Errorf("insufficient arguments: username and password needed")
 	}
 
 	helo := SMTPHelo{}
@@ -26,9 +26,10 @@ func (s SMTPAuth) Run(c *internal.Conn, args []string) error {
 		return err
 	}
 
-	l, err := c.WaitMessage("250-AUTH", 1*time.Second)
+	msg := "250-AUTH"
+	l, err := c.WaitMessage(msg, 1*time.Second)
 	if err != nil {
-		return fmt.Errorf("smtp-auth: %s", err)
+		return fmt.Errorf("failed waiting for message %q: %s", msg, err)
 	}
 
 	authMethods := parseAuthMethods(l)
