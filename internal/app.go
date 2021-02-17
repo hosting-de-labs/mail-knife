@@ -2,7 +2,6 @@ package internal
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 
@@ -54,7 +53,7 @@ func (a *App) Run(connectAddr string, args []string) error {
 	a.conn = conn
 
 	a.prompt = *prompt.New(
-		executorFunc(a.conn, a.exitHandler),
+		executorFunc(a.conn, a.ExitHandler),
 		completerFunc(),
 		prompt.OptionTitle("mk: interactive tcp client (like telnet command) on steroids"),
 		prompt.OptionPrefix(""),
@@ -89,12 +88,6 @@ func (a *App) runFlows(c *Conn, args []string) {
 
 		wgFlows.Wait()
 	}
-}
-
-func (a *App) exitHandler() {
-	a.conn.Close()
-
-	os.Exit(0)
 }
 
 func completerFunc() func(document prompt.Document) []prompt.Suggest {
