@@ -9,11 +9,6 @@ import (
 	"github.com/c-bata/go-prompt"
 )
 
-const (
-	LineEndingLf   string = "\n"
-	LineEndingCrLf string = "\r\n"
-)
-
 var (
 	menu = map[string][]prompt.Suggest{
 		"__global": {
