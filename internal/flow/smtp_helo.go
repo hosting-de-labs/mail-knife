@@ -14,9 +14,14 @@ var (
 
 type SMTPHelo struct{}
 
-func (s SMTPHelo) Run(c *internal.Conn, _ []string) error {
+func (s SMTPHelo) Run(addr string, _ []string) error {
+	c, err := internal.Dial(addr, func() {})
+	if err != nil {
+		return err
+	}
+
 	msg := "220 "
-	_, err := c.WaitMessage(msg, 10*time.Second)
+	_, err = c.WaitMessage(msg, 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed waiting for message %q: %s", msg, err)
 	}

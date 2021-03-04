@@ -46,12 +46,6 @@ func NewApp(exitHandler func()) App {
 }
 
 func (a *App) Run(connectAddr string, args []string) error {
-	conn, err := Dial(connectAddr, a.ExitHandler)
-	if err != nil {
-		return err
-	}
-	a.conn = conn
-
 	a.prompt = *prompt.New(
 		executorFunc(a.conn, a.ExitHandler),
 		completerFunc(),
@@ -61,7 +55,7 @@ func (a *App) Run(connectAddr string, args []string) error {
 	)
 
 	// run flows if any
-	a.runFlows(conn, args)
+	a.runFlows(connectAddr, args)
 
 	// start prompt
 	go a.prompt.Run()
@@ -71,23 +65,27 @@ func (a *App) Run(connectAddr string, args []string) error {
 	return nil
 }
 
-func (a *App) runFlows(c *Conn, args []string) {
-	if len(a.Flows) > 0 {
-		// run flows
-		wgFlows := &sync.WaitGroup{}
-		wgFlows.Add(1)
-		go func(wg *sync.WaitGroup) {
-			defer wg.Done()
-			for _, f := range a.Flows {
-				err := f.Run(c, args)
-				if err != nil {
-					fmt.Printf("Error on running flow %T: %s\n", f, err)
-				}
-			}
-		}(wgFlows)
-
-		wgFlows.Wait()
+func (a *App) runFlows(connectAddr string, args []string) {
+	if len(a.Flows) == 0 {
+		return
 	}
+
+	// run flows
+	wgFlows := &sync.WaitGroup{}
+	wgFlows.Add(1)
+
+	go func(wg *sync.WaitGroup) {
+		defer wg.Done()
+
+		for _, f := range a.Flows {
+			err := f.Run(connectAddr, args)
+			if err != nil {
+				fmt.Printf("Error on running flow %T: %s\n", f, err)
+			}
+		}
+	}(wgFlows)
+
+	wgFlows.Wait()
 }
 
 func completerFunc() func(document prompt.Document) []prompt.Suggest {

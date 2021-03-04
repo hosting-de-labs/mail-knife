@@ -1,10 +1,9 @@
 package flow
 
 import (
-	"encoding/base64"
 	"fmt"
-	"strings"
-	"time"
+	"net"
+	"net/smtp"
 
 	"github.com/hosting-de-labs/mail-knife/internal"
 )
@@ -15,52 +14,36 @@ var (
 
 type SMTPAuth struct{}
 
-func (s SMTPAuth) Run(c *internal.Conn, args []string) error {
+func (s SMTPAuth) Run(addr string, args []string) error {
 	if len(args) < 2 {
 		return fmt.Errorf("insufficient arguments: username and password needed")
 	}
 
-	helo := SMTPHelo{}
-	err := helo.Run(c, []string{})
-	if err != nil {
-		return err
+	hostname, _, _ := net.SplitHostPort(addr)
+	if len(hostname) == 0 {
+		return fmt.Errorf("run: len(hostname) == 0")
 	}
 
-	msg := "250-AUTH"
-	l, err := c.WaitMessage(msg, 1*time.Second)
+	conn, err := net.Dial("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("failed waiting for message %q: %s", msg, err)
+
 	}
 
-	authMethods := parseAuthMethods(l)
-	if _, ok := authMethods["plain"]; ok {
-		err = c.PrintfLine("AUTH PLAIN")
-		if err != nil {
-			return err
-		}
+	c, err := smtp.NewClient(conn, hostname)
+	if err != nil {
+		return fmt.Errorf("run: smtp.NewClient: %s", err)
+	}
 
-		credString := fmt.Sprintf("%s:%s", args[0], args[1])
-		credEnc := base64.StdEncoding.EncodeToString([]byte(credString))
+	err = c.Hello("host.name")
+	if err != nil {
+		return fmt.Errorf("run: hello: %s", err)
+	}
 
-		err = c.PrintfLine(credEnc)
-		if err != nil {
-			return err
-		}
-	} else {
-		return fmt.Errorf("unsupported authentication methods")
+	auth := smtp.PlainAuth("", args[0], args[1], hostname)
+	err = c.Auth(auth)
+	if err != nil {
+		return fmt.Errorf("run: auth: %s", err)
 	}
 
 	return nil
-}
-
-func parseAuthMethods(l string) map[string]bool {
-	authMethods := make(map[string]bool)
-	if strings.Contains(l, "LOGIN") {
-		authMethods["login"] = true
-	}
-
-	if strings.Contains(l, "PLAIN") {
-		authMethods["plain"] = true
-	}
-	return authMethods
 }
