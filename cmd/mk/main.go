@@ -3,14 +3,37 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 
-	"github.com/hosting-de-labs/mail-knife/internal"
 	"github.com/hosting-de-labs/mail-knife/internal/flow"
+
+	"github.com/hosting-de-labs/mail-knife/internal"
+)
+
+type flagFlows []string
+
+func (ff *flagFlows) String() string {
+	out := ""
+	for _, f := range *ff {
+		out = fmt.Sprintf("-flow %s ", f)
+	}
+
+	return out
+}
+
+func (ff *flagFlows) Set(value string) error {
+	*ff = append(*ff, value)
+	return nil
+}
+
+var (
+	flowFlags flagFlows
 )
 
 func main() {
+	flag.Var(&flowFlags, "flows", "Define flows to run")
 	flag.Parse()
 
 	args := flag.Args()
@@ -28,16 +51,29 @@ func main() {
 	// prompt
 	sigHandler(exitHandler)
 	app := internal.NewApp(exitHandler)
-
-	app.Flows = []internal.Flow{
-		//flow.SMTPHelo{},
-		flow.SMTPAuth{},
-	}
+	app.Flows = parseFlowFlags(&flowFlags)
 
 	err := app.Run(fmt.Sprintf("%s:%s", host, port), args[2:])
 	if err != nil {
 		fmt.Printf("error running app: %s\n", err)
 	}
+}
+
+func parseFlowFlags(ff *flagFlows) []internal.Flow {
+	var out []internal.Flow
+
+	for _, f := range *ff {
+		switch f {
+		case "smtp-helo":
+			out = append(out, flow.SMTPHelo{})
+		case "smtp-auth":
+			out = append(out, flow.SMTPAuth{})
+		default:
+			log.Printf("failed parsing flow %s", f)
+		}
+	}
+
+	return out
 }
 
 func exitHandler() {
